@@ -1,0 +1,36 @@
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>The Ballin JMoney's Pocket Billiards Practice Table</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <h1>The Ballin JMoney's Pocket Billiards Practice Table</h1>
+  <div id="game-container">
+    <canvas id="billiardsCanvas"></canvas>
+
+    <!-- Shot count display added here -->
+    <div id="shots-count" style="margin-top:10px; font-weight:bold;">Shots: 0</div>
+
+    <div id="ui">
+      <div id="instructions">
+        <p>Click and drag on the white cue ball to aim and shoot.</p>
+        <p>Sink the colored balls into any pocket.</p>
+      </div>
+      <div id="power-meter-container">
+        <label>Shot Power:</label>
+        <div id="power-meter"></div>
+      </div>
+      <div id="score-container">
+        Score: <span id="score">0</span>
+      </div>
+      <button id="resetBtn">Reset Game</button>
+    </div>
+  </div>
+  <script src="script.js"></script>
+</body>
+
+</html>
