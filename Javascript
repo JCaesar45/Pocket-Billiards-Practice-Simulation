@@ -1,0 +1,235 @@
+const canvas = document.getElementById('billiardsCanvas');
+const ctx = canvas.getContext('2d');
+canvas.width = 800;
+canvas.height = 400;
+
+// Table dimensions
+const table = { x: 50, y: 50, width: 700, height: 300 };
+
+// Pockets (4 corners + 2 sides)
+const pockets = [
+  { x: table.x, y: table.y },
+  { x: table.x + table.width / 2, y: table.y },
+  { x: table.x + table.width, y: table.y },
+  { x: table.x, y: table.y + table.height },
+  { x: table.x + table.width / 2, y: table.y + table.height },
+  { x: table.x + table.width, y: table.y + table.height }
+];
+
+// Balls
+let balls = [];
+
+function initBalls() {
+  balls = [
+    { x: 150, y: 200, radius: 10, color: 'white', vx: 0, vy: 0, moving: false, sunk: false },
+    { x: 650, y: 200, radius: 10, color: 'red', vx: 0, vy: 0, moving: false, sunk: false }
+  ];
+}
+
+initBalls();
+
+let isAiming = false;
+let aimStart = {}, aimEnd = {};
+let selectedBall = null;
+
+// --- Drawing Functions ---
+function drawTable() {
+  ctx.fillStyle = '#006400';
+  ctx.fillRect(table.x, table.y, table.width, table.height);
+  drawPockets();
+}
+
+function drawPockets() {
+  pockets.forEach(p => {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
+    ctx.fillStyle = 'black';
+    ctx.fill();
+  });
+}
+
+function drawBalls() {
+  balls.forEach(ball => {
+    if (!ball.sunk) {
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+      ctx.fillStyle = ball.color;
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.stroke();
+    }
+  });
+}
+
+function drawAimLine() {
+  if (isAiming) {
+    ctx.strokeStyle = '#ffff00';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(aimStart.x, aimStart.y);
+    ctx.lineTo(aimEnd.x, aimEnd.y);
+    ctx.stroke();
+
+    const dx = aimStart.x - aimEnd.x;
+    const dy = aimStart.y - aimEnd.y;
+    const power = Math.min(20, Math.hypot(dx, dy) * 0.2);
+    document.getElementById('powerLevel').style.width = (power / 20) * 100 + '%';
+  } else {
+    document.getElementById('powerLevel').style.width = '0%';
+  }
+}
+
+// --- Physics ---
+function updatePhysics() {
+  balls.forEach(ball => {
+    if (ball.moving && !ball.sunk) {
+      ball.x += ball.vx;
+      ball.y += ball.vy;
+
+      // Friction
+      ball.vx *= 0.985;
+      ball.vy *= 0.985;
+
+      if (Math.abs(ball.vx) < 0.05 && Math.abs(ball.vy) < 0.05) {
+        ball.vx = ball.vy = 0;
+        ball.moving = false;
+      }
+
+      checkCushionCollision(ball);
+      checkPocket(ball);
+
+      balls.forEach(other => {
+        if (other !== ball) {
+          checkBallCollision(ball, other);
+        }
+      });
+    }
+  });
+}
+
+function checkCushionCollision(ball) {
+  if (ball.x + ball.radius > table.x + table.width) {
+    ball.x = table.x + table.width - ball.radius;
+    ball.vx = -ball.vx;
+  } else if (ball.x - ball.radius < table.x) {
+    ball.x = table.x + ball.radius;
+    ball.vx = -ball.vx;
+  }
+  if (ball.y + ball.radius > table.y + table.height) {
+    ball.y = table.y + table.height - ball.radius;
+    ball.vy = -ball.vy;
+  } else if (ball.y - ball.radius < table.y) {
+    ball.y = table.y + ball.radius;
+    ball.vy = -ball.vy;
+  }
+}
+
+function checkBallCollision(b1, b2) {
+  if (b1.sunk || b2.sunk) return;
+
+  const dx = b2.x - b1.x;
+  const dy = b2.y - b1.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < b1.radius + b2.radius) {
+    const angle = Math.atan2(dy, dx);
+
+    const v1 = rotate(b1.vx, b1.vy, angle);
+    const v2 = rotate(b2.vx, b2.vy, angle);
+
+    const temp = v1.x;
+    v1.x = v2.x;
+    v2.x = temp;
+
+    const vFinal1 = rotate(v1.x, v1.y, -angle);
+    const vFinal2 = rotate(v2.x, v2.y, -angle);
+
+    b1.vx = vFinal1.x;
+    b1.vy = vFinal1.y;
+    b2.vx = vFinal2.x;
+    b2.vy = vFinal2.y;
+
+    b1.moving = true;
+    b2.moving = true;
+
+    const overlap = (b1.radius + b2.radius - dist) / 2;
+    b1.x -= Math.cos(angle) * overlap;
+    b1.y -= Math.sin(angle) * overlap;
+    b2.x += Math.cos(angle) * overlap;
+    b2.y += Math.sin(angle) * overlap;
+  }
+}
+
+function rotate(x, y, angle) {
+  return {
+    x: x * Math.cos(angle) + y * Math.sin(angle),
+    y: -x * Math.sin(angle) + y * Math.cos(angle)
+  };
+}
+
+function checkPocket(ball) {
+  for (const p of pockets) {
+    const dx = ball.x - p.x;
+    const dy = ball.y - p.y;
+    if (Math.hypot(dx, dy) < 15) {
+      ball.sunk = true;
+      ball.moving = false;
+      return;
+    }
+  }
+}
+
+// --- Mouse Events ---
+canvas.addEventListener('mousedown', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
+
+  const cueBall = balls[0];
+  if (!cueBall.sunk && Math.hypot(mouseX - cueBall.x, mouseY - cueBall.y) <= cueBall.radius + 5) {
+    isAiming = true;
+    aimStart = { x: mouseX, y: mouseY };
+    selectedBall = cueBall;
+  }
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  if (isAiming) {
+    const rect = canvas.getBoundingClientRect();
+    aimEnd.x = e.clientX - rect.left;
+    aimEnd.y = e.clientY - rect.top;
+  }
+});
+
+canvas.addEventListener('mouseup', (e) => {
+  if (isAiming && selectedBall) {
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const dx = aimStart.x - mouseX;
+    const dy = aimStart.y - mouseY;
+    const power = Math.min(20, Math.hypot(dx, dy) * 0.2);
+    const angle = Math.atan2(dy, dx);
+
+    selectedBall.vx = Math.cos(angle) * power;
+    selectedBall.vy = Math.sin(angle) * power;
+    selectedBall.moving = true;
+  }
+  isAiming = false;
+});
+
+// --- Main Loop ---
+function gameLoop() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawTable();
+  drawBalls();
+  drawAimLine();
+  updatePhysics();
+  requestAnimationFrame(gameLoop);
+}
+
+function resetGame() {
+  initBalls();
+}
+
+gameLoop();
