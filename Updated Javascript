@@ -1,0 +1,404 @@
+// --- Shots Counter Setup ---
+// 1. Add this at the top
+let shotsCount = 0;
+
+// 2. Get the display element
+const shotsDisplay = document.getElementById("shots-count");
+
+// 3. Define the update function
+function updateShotsCount() {
+  shotsDisplay.textContent = `Shots: ${shotsCount}`;
+}
+
+// --- Canvas and Game Setup ---
+
+const canvas = document.getElementById("billiardsCanvas");
+const ctx = canvas.getContext("2d");
+
+const powerMeter = document.getElementById("power-meter");
+const scoreDisplay = document.getElementById("score");
+const resetBtn = document.getElementById("resetBtn");
+
+// Table size in inches
+const tableWidthInches = 88;
+const tableHeightInches = 44;
+
+// Scaling factor (pixels per inch)
+const scale = 10;
+
+// Table dimensions in pixels
+const table = {
+  width: tableWidthInches * scale,
+  height: tableHeightInches * scale,
+  x: 50,
+  y: 50
+};
+
+// Canvas size to fit the table + margin
+canvas.width = table.width + 100; // e.g., 880 + 100 = 980 px
+canvas.height = table.height + 100; // e.g., 440 + 100 = 540 px
+
+// Pocket and ball sizes
+const pocketRadius = 27;
+const ballRadius = 12;
+
+// Friction factor
+const friction = 0.985;
+
+// Score
+let score = 0;
+
+// --- Ball Class ---
+class Ball {
+  constructor(x, y, color, isCue = false) {
+    this.x = x;
+    this.y = y;
+    this.radius = ballRadius;
+    this.color = color;
+    this.vx = 0;
+    this.vy = 0;
+    this.moving = false;
+    this.isCue = isCue;
+    this.sunk = false;
+  }
+
+  draw() {
+    if (this.sunk) return;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.fillStyle = this.color;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "#fff";
+    ctx.stroke();
+  }
+
+  update() {
+    if (this.sunk) return;
+    if (this.moving) {
+      this.x += this.vx;
+      this.y += this.vy;
+
+      // Apply friction
+      this.vx *= friction;
+      this.vy *= friction;
+
+      // Stop ball if velocity very low
+      if (Math.abs(this.vx) < 0.05 && Math.abs(this.vy) < 0.05) {
+        this.vx = 0;
+        this.vy = 0;
+        this.moving = false;
+      }
+
+      checkCushionCollision(this);
+      checkPocketSinking(this);
+    }
+  }
+}
+
+// Initialize balls: 1 cue + 6 colored balls
+const balls = [];
+
+function setupBalls() {
+  balls.length = 0; // Clear array
+  // Cue ball
+  balls.push(
+    new Ball(
+      table.x + table.width * 0.2,
+      table.y + table.height / 2,
+      "white",
+      true
+    )
+  );
+
+  // Triangle starting point
+  const startX = table.x + table.width * 0.75;
+  const startY = table.y + table.height / 2;
+
+  // Colors for the 6 balls
+  const colors = ["yellow", "blue", "red", "purple", "orange", "green"];
+
+  // Position balls in triangle formation
+  let positions = [
+    { x: startX, y: startY },
+    { x: startX + ballRadius * 2, y: startY - ballRadius },
+    { x: startX + ballRadius * 2, y: startY + ballRadius },
+    { x: startX + ballRadius * 4, y: startY - ballRadius * 2 },
+    { x: startX + ballRadius * 4, y: startY },
+    { x: startX + ballRadius * 4, y: startY + ballRadius * 2 }
+  ];
+
+  for (let i = 0; i < colors.length; i++) {
+    balls.push(new Ball(positions[i].x, positions[i].y, colors[i]));
+  }
+}
+setupBalls();
+
+// --- Drawing functions ---
+function drawTable() {
+  ctx.fillStyle = "#006400"; // green felt
+  ctx.fillRect(table.x, table.y, table.width, table.height);
+  ctx.lineWidth = 10;
+  ctx.strokeStyle = "#444";
+  ctx.strokeRect(table.x, table.y, table.width, table.height);
+  drawPockets();
+}
+
+function drawPockets() {
+  const pockets = [
+    { x: table.x, y: table.y }, // top left
+    { x: table.x + table.width / 2, y: table.y - 5 }, // top middle
+    { x: table.x + table.width, y: table.y }, // top right
+    { x: table.x, y: table.y + table.height }, // bottom left
+    { x: table.x + table.width / 2, y: table.y + table.height + 5 }, // bottom middle
+    { x: table.x + table.width, y: table.y + table.height } // bottom right
+  ];
+
+  pockets.forEach((p) => {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, pocketRadius, 0, Math.PI * 2);
+    ctx.fillStyle = "black";
+    ctx.fill();
+  });
+}
+
+// Cushion collision
+function checkCushionCollision(ball) {
+  if (ball.x + ball.radius > table.x + table.width) {
+    ball.x = table.x + table.width - ball.radius;
+    ball.vx = -ball.vx;
+  } else if (ball.x - ball.radius < table.x) {
+    ball.x = table.x + ball.radius;
+    ball.vx = -ball.vx;
+  }
+  if (ball.y + ball.radius > table.y + table.height) {
+    ball.y = table.y + table.height - ball.radius;
+    ball.vy = -ball.vy;
+  } else if (ball.y - ball.radius < table.y) {
+    ball.y = table.y + ball.radius;
+    ball.vy = -ball.vy;
+  }
+}
+
+// Ball-ball collision
+function checkBallCollision(b1, b2) {
+  if (b1.sunk || b2.sunk) return;
+  const dx = b2.x - b1.x;
+  const dy = b2.y - b1.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < b1.radius + b2.radius) {
+    const angle = Math.atan2(dy, dx);
+    const speed1 = Math.hypot(b1.vx, b1.vy);
+    const speed2 = Math.hypot(b2.vx, b2.vy);
+    const direction1 = Math.atan2(b1.vy, b1.vx);
+    const direction2 = Math.atan2(b2.vy, b2.vx);
+
+    const vx1 = speed1 * Math.cos(direction1 - angle);
+    const vy1 = speed1 * Math.sin(direction1 - angle);
+    const vx2 = speed2 * Math.cos(direction2 - angle);
+    const vy2 = speed2 * Math.sin(direction2 - angle);
+
+    const finalVx1 = vx2;
+    const finalVx2 = vx1;
+
+    b1.vx = Math.cos(angle) * finalVx1 + Math.cos(angle + Math.PI / 2) * vy1;
+    b1.vy = Math.sin(angle) * finalVx1 + Math.sin(angle + Math.PI / 2) * vy1;
+    b2.vx = Math.cos(angle) * finalVx2 + Math.cos(angle + Math.PI / 2) * vy2;
+    b2.vy = Math.sin(angle) * finalVx2 + Math.sin(angle + Math.PI / 2) * vy2;
+
+    b1.moving = true;
+    b2.moving = true;
+
+    const overlap = (b1.radius + b2.radius - dist) / 2;
+    b1.x -= overlap * (dx / dist);
+    b1.y -= overlap * (dy / dist);
+    b2.x += overlap * (dx / dist);
+    b2.y += overlap * (dy / dist);
+  }
+}
+
+// Check if ball sinks into pockets
+function checkPocketSinking(ball) {
+  const pockets = [
+    { x: table.x, y: table.y },
+    { x: table.x + table.width / 2, y: table.y - 5 },
+    { x: table.x + table.width, y: table.y },
+    { x: table.x, y: table.y + table.height },
+    { x: table.x + table.width / 2, y: table.y + table.height + 5 },
+    { x: table.x + table.width, y: table.y + table.height }
+  ];
+
+  for (const p of pockets) {
+    const dist = Math.hypot(ball.x - p.x, ball.y - p.y);
+    if (dist <= pocketRadius + ball.radius) {
+      if (ball.isCue) {
+        // Deduct a point, score can go negative now
+        score -= 1;
+        updateScore();
+        resetCueBall();
+        break;
+      }
+
+      // For other balls
+      if (!ball.sunk && !ball.isCue) {
+        ball.sunk = true;
+        score++;
+        updateScore();
+      }
+
+      // Stop the ball
+      ball.vx = 0;
+      ball.vy = 0;
+      ball.moving = false;
+      break;
+    }
+  }
+}
+
+// Reset cue ball position
+function resetCueBall() {
+  const cue = balls.find((b) => b.isCue);
+  cue.x = table.x + table.width * 0.2;
+  cue.y = table.y + table.height / 2;
+  cue.vx = 0;
+  cue.vy = 0;
+  cue.moving = false;
+}
+
+// Update score UI
+function updateScore() {
+  scoreDisplay.textContent = score;
+}
+
+// --- Shooting variables ---
+let isAiming = false;
+let aimStart = { x: 0, y: 0 };
+let aimEnd = { x: 0, y: 0 };
+let selectedBall = null;
+let shotPower = 0;
+
+// --- Event Listeners ---
+
+// Mouse down: start aiming
+canvas.addEventListener("mousedown", (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
+  const cueBall = balls.find((b) => b.isCue);
+  if (!cueBall.moving && !isAnyBallMoving()) {
+    if (
+      Math.hypot(mouseX - cueBall.x, mouseY - cueBall.y) <=
+      cueBall.radius + 5
+    ) {
+      isAiming = true;
+      aimStart = { x: mouseX, y: mouseY };
+      aimEnd = { x: mouseX, y: mouseY };
+      selectedBall = cueBall;
+    }
+  }
+});
+
+// Mouse move: update aim line
+canvas.addEventListener("mousemove", (e) => {
+  if (isAiming) {
+    const rect = canvas.getBoundingClientRect();
+    aimEnd.x = e.clientX - rect.left;
+    aimEnd.y = e.clientY - rect.top;
+    const dx = aimStart.x - aimEnd.x;
+    const dy = aimStart.y - aimEnd.y;
+    shotPower = Math.min(20, Math.hypot(dx, dy) * 0.2);
+    updatePowerMeter(shotPower);
+  }
+});
+
+// Mouse up: shoot
+canvas.addEventListener("mouseup", (e) => {
+  if (isAiming && selectedBall) {
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    // Invert dx, dy to get correct shooting direction
+    const dx = mouseX - aimStart.x;
+    const dy = mouseY - aimStart.y;
+
+    const power = Math.min(20, Math.hypot(dx, dy) * 0.2);
+    const angle = Math.atan2(dy, dx);
+
+    // Increment shot count
+    shotsCount++;
+    updateShotsCount();
+
+    // Set velocity
+    selectedBall.vx = Math.cos(angle) * power;
+    selectedBall.vy = Math.sin(angle) * power;
+    selectedBall.moving = true;
+
+    isAiming = false;
+    shotPower = 0;
+    updatePowerMeter(0);
+  }
+});
+
+// --- Power meter UI ---
+function updatePowerMeter(power) {
+  const percent = (power / 20) * 100;
+  powerMeter.style.setProperty("--power-width", `${percent}%`);
+  powerMeter.style.width = `${percent}%`;
+  powerMeter.style.background = `linear-gradient(90deg, #ff0, #f00)`;
+}
+
+// --- Drawing aim line ---
+function drawAimLine() {
+  if (isAiming) {
+    ctx.strokeStyle = "#ffff00";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(aimStart.x, aimStart.y);
+    ctx.lineTo(aimEnd.x, aimEnd.y);
+    ctx.stroke();
+  }
+}
+
+// --- Utility ---
+function isAnyBallMoving() {
+  return balls.some((ball) => ball.moving);
+}
+
+// --- Main game loop ---
+function gameLoop() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawTable();
+
+  balls.forEach((ball) => ball.update());
+
+  // Check collisions among balls
+  for (let i = 0; i < balls.length; i++) {
+    for (let j = i + 1; j < balls.length; j++) {
+      checkBallCollision(balls[i], balls[j]);
+    }
+  }
+
+  balls.forEach((ball) => ball.draw());
+  drawAimLine();
+
+  requestAnimationFrame(gameLoop);
+}
+
+// --- Reset button ---
+resetBtn.addEventListener("click", () => {
+  score = 0;
+  updateScore();
+  setupBalls();
+  resetCueBall();
+  isAiming = false;
+  updatePowerMeter(0);
+  // Reset shot count
+  shotsCount = 0;
+  updateShotsCount();
+});
+
+// --- Initialize UI ---
+updateScore();
+updateShotsCount();
+gameLoop();
